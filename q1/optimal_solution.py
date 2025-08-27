@@ -1,9 +1,3 @@
-"""
-反向对称矩阵最优解法实现
-
-该模块实现了反向对称矩阵与向量乘积的最优算法，时间复杂度O(n²)，空间复杂度O(n)。
-"""
-
 import numpy as np
 from typing import List, Union
 import time
@@ -84,33 +78,6 @@ class ReverseSymmetricMatrix:
                 result[i] += self.compressed[k] * v[j]
         
         return result
-    
-    def matrix_vector_product_optimized(self, vector: List[Union[int, float]]) -> np.ndarray:
-        """
-        优化的矩阵-向量乘积算法
-        
-        通过预计算索引映射来减少重复计算
-        
-        Args:
-            vector: 输入向量，长度为n
-            
-        Returns:
-            结果向量 A·v
-        """
-        if len(vector) != self.size:
-            raise ValueError(f"向量长度必须为{self.size}，当前长度为{len(vector)}")
-        
-        v = np.array(vector, dtype=float)
-        result = np.zeros(self.size)
-        
-        # 预计算索引映射
-        for i in range(self.size):
-            # 计算第i行所有元素的索引
-            indices = [self.size - 1 + i - j for j in range(self.size)]
-            # 使用向量化操作
-            result[i] = np.sum(self.compressed[indices] * v)
-        
-        return result
 
 
 def benchmark_algorithms(n: int, num_trials: int = 100):
@@ -130,34 +97,25 @@ def benchmark_algorithms(n: int, num_trials: int = 100):
     # 创建矩阵对象
     matrix = ReverseSymmetricMatrix(compressed.tolist())
     
-    # 测试基本算法
+    # 测试最优算法
     start_time = time.time()
     for _ in range(num_trials):
         result1 = matrix.matrix_vector_product(vector.tolist())
-    basic_time = time.time() - start_time
-    
-    # 测试优化算法
-    start_time = time.time()
-    for _ in range(num_trials):
-        result2 = matrix.matrix_vector_product_optimized(vector.tolist())
-    optimized_time = time.time() - start_time
+    algorithm_time = time.time() - start_time
     
     # 测试NumPy实现（作为参考）
     full_matrix = matrix.to_full_matrix()
     start_time = time.time()
     for _ in range(num_trials):
-        result3 = full_matrix @ vector
+        result2 = full_matrix @ vector
     numpy_time = time.time() - start_time
     
     # 验证结果一致性
-    assert np.allclose(result1, result2), "基本算法和优化算法结果不一致"
-    assert np.allclose(result1, result3), "自定义算法和NumPy结果不一致"
+    assert np.allclose(result1, result2), "自定义算法和NumPy结果不一致"
     
-    print(f"基本算法时间: {basic_time:.6f}s")
-    print(f"优化算法时间: {optimized_time:.6f}s")
-    print(f"NumPy实现时间: {numpy_time:.6f}s")
-    print(f"优化算法加速比: {basic_time/optimized_time:.2f}x")
-    print(f"相对于NumPy: {numpy_time/optimized_time:.2f}x")
+    print(f"最优算法时间:      {algorithm_time:.6f}s")
+    print(f"NumPy实现时间:     {numpy_time:.6f}s")
+    print(f"相对NumPy性能:     {numpy_time/algorithm_time:.2f}x")
     print()
 
 
@@ -240,7 +198,7 @@ if __name__ == "__main__":
     
     # 运行基准测试
     for n in [10, 50, 100]:
-        benchmark_algorithms(n, num_trials=1000)
+        benchmark_algorithms(n, num_trials=100)
     
     # 复杂度分析
     complexity_analysis()

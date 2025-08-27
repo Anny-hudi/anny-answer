@@ -1,4 +1,4 @@
-# 反向对称矩阵最优解法
+# 反向对称矩阵
 
 ## 项目概述
 
@@ -23,15 +23,28 @@ q1/
 - 使用长度为 $2n-1$ 的向量 $a = [a_0, a_1, ..., a_{2n-2}]$ 表示
 - 矩阵元素：$A_{i,j} = a_{n-1+i-j}$
 
-### 矩阵-向量乘积算法
-```python
-def matrix_vector_product(self, vector):
-    result = np.zeros(self.size)
-    for i in range(self.size):
-        for j in range(self.size):
-            k = self.size - 1 + i - j
-            result[i] += self.compressed[k] * vector[j]
-    return result
+### 矩阵-向量乘积算法（伪代码）
+
+```pseudocode
+Algorithm: ReverseDiagonalMatrixVectorProduct
+Input: 
+  - a: 压缩向量，长度为2n-1，表示反向对称矩阵
+  - v: 输入向量，长度为n
+  - n: 矩阵维度
+Output: 
+  - u: 结果向量，长度为n，满足 u = A·v
+
+Begin:
+  1. Initialize u = [0, 0, ..., 0]  // 长度为n的零向量
+  2. For i = 0 to n-1 do:
+       For j = 0 to n-1 do:
+         k = n-1 + i - j         // 计算压缩向量索引
+         u[i] = u[i] + a[k] * v[j]  // 累加乘积
+  3. Return u
+End
+
+时间复杂度: O(n²)
+空间复杂度: O(n)
 ```
 
 ## 性能特点
@@ -73,8 +86,8 @@ element = matrix.get_element(2, 3)
 # 转换为完整矩阵（用于验证）
 full_matrix = matrix.to_full_matrix()
 
-# 使用优化算法
-result = matrix.matrix_vector_product_optimized(vector)
+# 计算矩阵-向量乘积
+result = matrix.matrix_vector_product(vector)
 ```
 
 ## 运行测试

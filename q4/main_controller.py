@@ -1,8 +1,6 @@
 """
-主控制器模块
-
-统一管理A股数据采集系统的各个组件，提供完整的数据采集、
-存储、验证和维护功能。支持全量采集和增量更新。
+主控制器
+A股数据采集系统的统一管理
 """
 
 import logging
@@ -27,20 +25,15 @@ class StockDataController:
     """A股数据采集系统主控制器"""
     
     def __init__(self, config_path: str = None):
-        """
-        初始化主控制器
-        
-        Args:
-            config_path: 配置文件路径（保持兼容性，但不使用）
-        """
+        # 初始化主控制器
         self.config_path = config_path or "config.yaml"  # 保持兼容性
         self.config = self._load_config()
         
-        # 初始化日志
+        # 设置日志
         self._setup_logging()
         self.logger = logging.getLogger(__name__)
         
-        # 初始化各组件
+        # 初始化组件
         self._init_components()
         
         # 系统状态
@@ -55,23 +48,13 @@ class StockDataController:
         self.logger.info("股票数据采集系统初始化完成")
     
     def _load_config(self) -> Dict[str, Any]:
-        """
-        加载配置文件
-        
-        Returns:
-            配置字典
-        """
+        """加载配置"""
         # 直接使用默认配置，不依赖外部配置文件
         print("使用内置默认配置")
         return self._get_default_config()
     
     def _get_default_config(self) -> Dict[str, Any]:
-        """
-        获取默认配置
-        
-        Returns:
-            默认配置字典
-        """
+        """获取默认配置"""
         return {
             'database': {
                 'type': 'sqlite',
@@ -136,7 +119,7 @@ class StockDataController:
         )
     
     def _init_components(self):
-        """初始化系统组件"""
+        """初始化组件"""
         try:
             # 初始化数据获取器
             akshare_config = self.config.get('akshare', {})
@@ -163,10 +146,7 @@ class StockDataController:
             raise
     
     def initialize_system(self):
-        """
-        系统初始化
-        包括创建必要的目录、数据表等
-        """
+        """系统初始化"""
         try:
             self.logger.info("开始系统初始化...")
             
@@ -187,10 +167,7 @@ class StockDataController:
             raise
     
     def full_data_collection(self):
-        """
-        全量数据采集
-        获取所有A股的历史数据
-        """
+        """全量数据采集"""
         try:
             self.logger.info("=" * 60)
             self.logger.info("开始全量数据采集")
@@ -319,10 +296,7 @@ class StockDataController:
             }
     
     def incremental_update(self):
-        """
-        增量数据更新
-        获取最新的交易日数据
-        """
+        """增量数据更新"""
         try:
             self.logger.info("开始增量数据更新")
             start_time = datetime.now()
@@ -412,13 +386,7 @@ class StockDataController:
             return {'success': False, 'error': str(e)}
     
     def disaster_recovery(self, backup_path: str = None):
-        """
-        灾难恢复
-        从备份文件恢复数据
-        
-        Args:
-            backup_path: 备份文件路径
-        """
+        """灾难恢复"""
         try:
             self.logger.info("开始灾难恢复")
             
@@ -452,10 +420,7 @@ class StockDataController:
             return {'success': False, 'error': str(e)}
     
     def daily_maintenance(self):
-        """
-        日常维护任务
-        包括数据验证、备份、清理等
-        """
+        """日常维护任务"""
         try:
             self.logger.info("开始日常维护任务")
             
@@ -690,7 +655,7 @@ class StockDataController:
             self.system_status['system_health'] = 'unknown'
     
     def setup_scheduler(self):
-        """设置定时任务调度器"""
+        """设置定时任务"""
         try:
             schedule_config = self.config.get('schedule', {})
             
@@ -715,7 +680,7 @@ class StockDataController:
             self.logger.error(f"设置定时任务失败: {e}")
     
     def run_scheduler(self):
-        """运行定时任务调度器"""
+        """运行定时任务"""
         self.logger.info("启动定时任务调度器")
         
         try:
@@ -728,12 +693,7 @@ class StockDataController:
             self.logger.error(f"定时任务调度器运行异常: {e}")
     
     def get_system_status(self) -> Dict[str, Any]:
-        """
-        获取系统状态
-        
-        Returns:
-            系统状态字典
-        """
+        """获取系统状态"""
         self._update_system_status()
         
         return {
@@ -753,7 +713,7 @@ class StockDataController:
 
 
 def main():
-    """主函数"""
+    """主程序"""
     parser = argparse.ArgumentParser(description='A股数据采集系统')
     parser.add_argument('--action', choices=['init', 'full', 'update', 'recovery', 'maintenance', 'status', 'schedule'], 
                        default='status', help='执行操作')

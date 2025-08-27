@@ -1,8 +1,6 @@
 """
-数据验证模块
-
-提供A股数据的完整性、准确性和质量检查功能。
-包括价格逻辑验证、异常值检测、数据连续性检查等。
+数据验证
+股票数据质量检查和异常检测
 """
 
 import pandas as pd
@@ -22,16 +20,11 @@ class DataValidator:
     """数据验证器"""
     
     def __init__(self, validation_config: Dict[str, Any] = None):
-        """
-        初始化数据验证器
-        
-        Args:
-            validation_config: 验证配置
-        """
+        # 初始化验证器
         self.validation_config = validation_config or {}
         self.validation_rules = self._init_validation_rules()
         
-        # 配置日志
+        # 设置日志
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
         
@@ -39,12 +32,7 @@ class DataValidator:
         self.validation_results = {}
     
     def _init_validation_rules(self) -> Dict[str, Any]:
-        """
-        初始化验证规则
-        
-        Returns:
-            验证规则字典
-        """
+        """初始化验证规则"""
         default_rules = {
             'price_rules': {
                 'min_price': 0.01,  # 最小股价
@@ -69,7 +57,7 @@ class DataValidator:
             }
         }
         
-        # 合并用户配置
+        # 合并配置
         if self.validation_config:
             for category, rules in self.validation_config.items():
                 if category in default_rules:
@@ -80,15 +68,7 @@ class DataValidator:
         return default_rules
     
     def validate_data_format(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """
-        验证数据格式
-        
-        Args:
-            data: 股票数据
-            
-        Returns:
-            验证结果
-        """
+        """验证数据格式"""
         results = {
             'is_valid': True,
             'errors': [],
@@ -136,15 +116,7 @@ class DataValidator:
         return results
     
     def validate_data_range(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """
-        验证数据范围
-        
-        Args:
-            data: 股票数据
-            
-        Returns:
-            验证结果
-        """
+        """验证数据范围"""
         results = {
             'is_valid': True,
             'errors': [],
@@ -218,15 +190,7 @@ class DataValidator:
         return results
     
     def check_price_logic(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """
-        检查价格逻辑
-        
-        Args:
-            data: 股票数据
-            
-        Returns:
-            验证结果
-        """
+        """检查价格逻辑"""
         results = {
             'is_valid': True,
             'errors': [],
@@ -289,17 +253,7 @@ class DataValidator:
     
     def check_data_completeness(self, data: pd.DataFrame, stock_code: str = None, 
                               date_range: Tuple[str, str] = None) -> Dict[str, Any]:
-        """
-        检查数据完整性
-        
-        Args:
-            data: 股票数据
-            stock_code: 股票代码
-            date_range: 预期日期范围
-            
-        Returns:
-            验证结果
-        """
+        """检查数据完整性"""
         results = {
             'is_valid': True,
             'errors': [],
@@ -368,15 +322,7 @@ class DataValidator:
         return results
     
     def detect_anomalies(self, data: pd.DataFrame) -> List[Dict[str, Any]]:
-        """
-        检测异常数据
-        
-        Args:
-            data: 股票数据
-            
-        Returns:
-            异常数据列表
-        """
+        """检测异常数据"""
         anomalies = []
         
         try:
@@ -457,16 +403,7 @@ class DataValidator:
         return anomalies
     
     def validate_full_dataset(self, data: pd.DataFrame, stock_code: str = None) -> Dict[str, Any]:
-        """
-        完整数据集验证
-        
-        Args:
-            data: 股票数据
-            stock_code: 股票代码
-            
-        Returns:
-            完整验证结果
-        """
+        """完整数据集验证"""
         full_results = {
             'overall_valid': True,
             'validation_time': datetime.now().isoformat(),
@@ -519,15 +456,7 @@ class DataValidator:
         return full_results
     
     def generate_quality_report(self, validation_results: Dict[str, Any]) -> str:
-        """
-        生成数据质量报告
-        
-        Args:
-            validation_results: 验证结果
-            
-        Returns:
-            质量报告文本
-        """
+        """生成数据质量报告"""
         report_lines = []
         
         # 报告头部
@@ -598,13 +527,7 @@ class DataValidator:
     
     def save_validation_report(self, validation_results: Dict[str, Any], 
                              report_path: str = None):
-        """
-        保存验证报告
-        
-        Args:
-            validation_results: 验证结果
-            report_path: 报告保存路径
-        """
+        """保存验证报告"""
         if not report_path:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             stock_code = validation_results.get('stock_code', 'unknown')
@@ -623,7 +546,7 @@ class DataValidator:
 
 
 def example_usage():
-    """使用示例"""
+    """测试代码"""
     
     # 创建测试数据
     test_data = pd.DataFrame({

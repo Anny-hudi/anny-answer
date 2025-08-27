@@ -7,20 +7,175 @@
 
 import numpy as np
 import cmath
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Optional
 import time
+import threading
 
 
-class FFTStringMatcher:
+class MemoryPool:
+    """内存池管理，减少GC压力"""
+    
+    def __init__(self):
+        self._complex_arrays: Dict[int, List[complex]] = {}
+        self._int_arrays: Dict[int, List[int]] = {}
+        self._lock = threading.Lock()
+    
+    def get_complex_array(self, size: int) -> List[complex]:
+        """获取指定大小的复数数组"""
+        with self._lock:
+            if size not in self._complex_arrays:
+                self._complex_arrays[size] = [0+0j] * size
+            return self._complex_arrays[size].copy()
+    
+    def get_int_array(self, size: int) -> List[int]:
+        """获取指定大小的整数数组"""
+        with self._lock:
+            if size not in self._int_arrays:
+                self._int_arrays[size] = [0] * size
+            return self._int_arrays[size].copy()
+
+
+class OptimizedFFTStringMatcher:
     """
-    基于FFT的字符串匹配器
+    优化的基于FFT的字符串匹配器
     
     使用快速傅里叶变换实现字符串匹配，支持通配符。
+    包含多种优化策略：迭代式FFT、内存池、自适应策略等。
     """
     
     def __init__(self):
-        """初始化FFT字符串匹配器"""
-        pass
+        """初始化优化的FFT字符串匹配器"""
+        self.memory_pool = MemoryPool()
+        self._twiddle_cache: Dict[int, List[complex]] = {}
+        self.use_numpy_threshold = 1024  # 超过此大小使用NumPy FFT
+        self.use_fft_threshold = 64      # 超过此大小使用FFT，否则用DFT
+    
+    def get_twiddle_factors(self, n: int) -> List[complex]:
+        """预计算并缓存旋转因子"""
+        if n not in self._twiddle_cache:
+            factors = []
+            for k in range(n // 2):
+                angle = -2 * cmath.pi * k / n
+                factors.append(cmath.exp(1j * angle))
+            self._twiddle_cache[n] = factors
+        return self._twiddle_cache[n]
+    
+    def bit_reverse_permute(self, data: List[complex]) -> None:
+        """原地位反转排列"""
+        n = len(data)
+        j = 0
+        for i in range(1, n):
+            bit = n >> 1
+            while j & bit:
+                j ^= bit
+                bit >>= 1
+            j ^= bit
+            if i < j:
+                data[i], data[j] = data[j], data[i]
+    
+    def iterative_fft(self, data: List[complex]) -> List[complex]:
+        """
+        迭代式FFT实现，避免递归开销
+        
+        Args:
+            data: 输入数据（复数列表）
+            
+        Returns:
+            FFT结果
+        """
+        n = len(data)
+        if n <= 1:
+            return data
+        
+        # 确保n是2的幂次
+        if n & (n - 1) != 0:
+            next_power = 1
+            while next_power < n:
+                next_power <<= 1
+            data = data + [0] * (next_power - n)
+            n = next_power
+        
+        # 使用内存池获取结果数组
+        result = self.memory_pool.get_complex_array(n)
+        for i in range(n):
+            result[i] = data[i]
+        
+        # 位反转排列
+        self.bit_reverse_permute(result)
+        
+        # 迭代计算FFT
+        length = 2
+        while length <= n:
+            angle = -2 * cmath.pi / length
+            wlen = cmath.exp(1j * angle)
+            
+            for i in range(0, n, length):
+                w = 1
+                for j in range(length // 2):
+                    u = result[i + j]
+                    v = result[i + j + length // 2] * w
+                    result[i + j] = u + v
+                    result[i + j + length // 2] = u - v
+                    w *= wlen
+            
+            length <<= 1
+        
+        return result
+    
+    def naive_dft(self, data: List[complex]) -> List[complex]:
+        """
+        朴素DFT实现，用于小规模数据
+        
+        Args:
+            data: 输入数据
+            
+        Returns:
+            DFT结果
+        """
+        n = len(data)
+        result = self.memory_pool.get_complex_array(n)
+        
+        for k in range(n):
+            result[k] = 0
+            for j in range(n):
+                angle = -2 * cmath.pi * k * j / n
+                w = cmath.exp(1j * angle)
+                result[k] += data[j] * w
+        
+        return result
+    
+    def numpy_fft(self, data: List[complex]) -> List[complex]:
+        """
+        使用NumPy FFT的高度优化实现
+        
+        Args:
+            data: 输入数据
+            
+        Returns:
+            FFT结果
+        """
+        np_data = np.array(data, dtype=np.complex128)
+        result = np.fft.fft(np_data)
+        return result.tolist()
+    
+    def adaptive_fft(self, data: List[complex]) -> List[complex]:
+        """
+        自适应FFT选择策略
+        
+        Args:
+            data: 输入数据
+            
+        Returns:
+            FFT结果
+        """
+        n = len(data)
+        
+        if n <= self.use_fft_threshold:
+            return self.naive_dft(data)  # 小规模用DFT
+        elif n <= self.use_numpy_threshold:
+            return self.iterative_fft(data)  # 中等规模用迭代FFT
+        else:
+            return self.numpy_fft(data)  # 大规模用NumPy FFT
     
     def encode_character(self, char: str) -> int:
         """
@@ -51,7 +206,7 @@ class FFTStringMatcher:
     
     def fft(self, data: List[complex]) -> List[complex]:
         """
-        快速傅里叶变换
+        快速傅里叶变换（保持兼容性的接口）
         
         Args:
             data: 输入数据（复数列表）
@@ -59,37 +214,8 @@ class FFTStringMatcher:
         Returns:
             FFT结果
         """
-        n = len(data)
-        if n == 1:
-            return data
-        
-        # 确保n是2的幂次
-        if n & (n - 1) != 0:
-            # 补零到最近的2的幂次
-            next_power = 1
-            while next_power < n:
-                next_power <<= 1
-            data = data + [0] * (next_power - n)
-            n = next_power
-        
-        # 分治FFT
-        even = data[::2]
-        odd = data[1::2]
-        
-        even_fft = self.fft(even)
-        odd_fft = self.fft(odd)
-        
-        result = [0] * n
-        for k in range(n // 2):
-            # 计算旋转因子
-            angle = -2 * cmath.pi * k / n
-            w = cmath.exp(1j * angle)
-            
-            # 蝶形运算
-            result[k] = even_fft[k] + w * odd_fft[k]
-            result[k + n // 2] = even_fft[k] - w * odd_fft[k]
-        
-        return result
+        # 使用自适应策略选择最优的FFT实现
+        return self.adaptive_fft(data)
     
     def ifft(self, data: List[complex]) -> List[complex]:
         """
@@ -103,11 +229,17 @@ class FFTStringMatcher:
         """
         n = len(data)
         
+        # 对于大规模数据，直接使用NumPy
+        if n > self.use_numpy_threshold:
+            np_data = np.array(data, dtype=np.complex128)
+            result = np.fft.ifft(np_data)
+            return result.tolist()
+        
         # 共轭输入
         conjugated = [x.conjugate() for x in data]
         
         # 正向FFT
-        fft_result = self.fft(conjugated)
+        fft_result = self.adaptive_fft(conjugated)
         
         # 共轭输出并除以n
         result = [x.conjugate() / n for x in fft_result]
@@ -370,6 +502,167 @@ class FFTStringMatcher:
         
         return matches
     
+    def optimized_fft_string_matching(self, S: str, P: str, verbose: bool = True) -> List[int]:
+        """
+        优化的FFT字符串匹配算法
+        
+        集成多种优化策略：自适应FFT、内存池、NumPy集成、分块处理
+        
+        Args:
+            S: 主串
+            P: 模式串（可包含通配符?）
+            verbose: 是否输出详细过程信息
+            
+        Returns:
+            所有匹配位置的列表
+        """
+        n, m = len(S), len(P)
+        
+        if verbose:
+            print(f"\n=== 优化FFT字符串匹配详细过程 ===")
+            print(f"主串 S: '{S}' (长度: {n})")
+            print(f"模式串 P: '{P}' (长度: {m})")
+        
+        # 启发式预处理
+        if not self._heuristic_preprocessing(S, P, verbose):
+            return []
+        
+        # 选择最优算法策略
+        algorithm_choice = self._select_algorithm_strategy(n, m, verbose)
+        
+        if algorithm_choice == "numpy":
+            return self._numpy_fft_matching(S, P, verbose)
+        elif algorithm_choice == "chunked":
+            return self._chunked_string_matching(S, P, verbose)
+        else:
+            return self.fft_string_matching(S, P, verbose)
+    
+    def _heuristic_preprocessing(self, S: str, P: str, verbose: bool = True) -> bool:
+        """启发式预处理，快速排除不可能匹配的情况"""
+        n, m = len(S), len(P)
+        
+        if m > n:
+            if verbose:
+                print("❌ 模式串长度大于主串长度，无法匹配")
+            return False
+        
+        # 字符频率检查（对于不含通配符的模式）
+        if '?' not in P:
+            p_chars = set(P)
+            s_chars = set(S)
+            if not p_chars.issubset(s_chars):
+                if verbose:
+                    print(f"❌ 模式串包含主串中不存在的字符: {p_chars - s_chars}")
+                return False
+        
+        return True
+    
+    def _select_algorithm_strategy(self, n: int, m: int, verbose: bool = True) -> str:
+        """根据数据规模选择最优算法策略"""
+        if n > 10000:
+            strategy = "chunked"
+        elif n > self.use_numpy_threshold:
+            strategy = "numpy"
+        else:
+            strategy = "standard"
+        
+        if verbose:
+            print(f"\n--- 算法策略选择 ---")
+            print(f"数据规模: n={n}, m={m}")
+            print(f"选择策略: {strategy}")
+            if strategy == "chunked":
+                print("  → 使用分块处理策略")
+            elif strategy == "numpy":
+                print("  → 使用NumPy优化FFT")
+            else:
+                print("  → 使用标准优化FFT")
+        
+        return strategy
+    
+    def _numpy_fft_matching(self, S: str, P: str, verbose: bool) -> List[int]:
+        """使用NumPy FFT的高度优化版本"""
+        if verbose:
+            print(f"\n--- 步骤2: NumPy FFT计算 ---")
+        
+        n, m = len(S), len(P)
+        S_encoded = self.encode_string(S)
+        P_encoded = self.encode_string(P)
+        
+        # 计算辅助数组
+        S_squared = [x * x for x in S_encoded]
+        P_mask = [1 if P_encoded[j] != 0 else 0 for j in range(m)]
+        P_squared_sum = sum(P_encoded[j] * P_encoded[j] for j in range(m) if P_encoded[j] != 0)
+        
+        # 准备NumPy数组
+        size = 1
+        while size < n + m - 1:
+            size *= 2
+        
+        # 使用NumPy进行高效计算
+        S_squared_np = np.zeros(size, dtype=np.complex128)
+        S_encoded_np = np.zeros(size, dtype=np.complex128)
+        P_mask_np = np.zeros(size, dtype=np.complex128)
+        P_encoded_np = np.zeros(size, dtype=np.complex128)
+        
+        S_squared_np[:n] = S_squared
+        S_encoded_np[:n] = S_encoded
+        P_mask_np[:m] = P_mask[::-1]  # 反转
+        P_encoded_np[:m] = P_encoded[::-1]  # 反转
+        
+        # NumPy FFT计算
+        S_squared_fft = np.fft.fft(S_squared_np)
+        S_encoded_fft = np.fft.fft(S_encoded_np)
+        P_mask_fft = np.fft.fft(P_mask_np)
+        P_encoded_fft = np.fft.fft(P_encoded_np)
+        
+        # 卷积计算
+        conv1 = np.fft.ifft(S_squared_fft * P_mask_fft)
+        conv2 = np.fft.ifft(S_encoded_fft * P_encoded_fft)
+        
+        # 提取匹配位置
+        matches = []
+        for i in range(n - m + 1):
+            match_score = conv1[i + m - 1].real + P_squared_sum - 2 * conv2[i + m - 1].real
+            if abs(match_score) < 1e-6:
+                matches.append(i)
+        
+        if verbose:
+            print(f"NumPy FFT计算完成，找到{len(matches)}个匹配")
+        
+        return matches
+    
+    def _chunked_string_matching(self, S: str, P: str, verbose: bool, chunk_size: int = 5000) -> List[int]:
+        """分块处理长字符串"""
+        if verbose:
+            print(f"\n--- 步骤2: 分块处理策略 ---")
+            print(f"分块大小: {chunk_size}")
+        
+        matches = []
+        m = len(P)
+        
+        for i in range(0, len(S), chunk_size):
+            # 考虑重叠区域以避免跨块匹配丢失
+            end = min(i + chunk_size + m - 1, len(S))
+            chunk = S[i:end]
+            
+            if verbose and i == 0:
+                print(f"处理第一块: 位置{i}到{end-1}")
+            
+            # 对块进行FFT匹配
+            chunk_matches = self.fft_string_matching(chunk, P, verbose=False)
+            
+            # 调整匹配位置到全局坐标
+            adjusted_matches = [pos + i for pos in chunk_matches if pos + i + m <= len(S)]
+            matches.extend(adjusted_matches)
+        
+        # 去重并排序
+        matches = sorted(set(matches))
+        
+        if verbose:
+            print(f"分块处理完成，找到{len(matches)}个匹配")
+        
+        return matches
+    
     def naive_string_matching(self, S: str, P: str) -> List[int]:
         """
         朴素字符串匹配算法（用于对比）
@@ -394,6 +687,49 @@ class FFTStringMatcher:
                 matches.append(i)
         
         return matches
+
+
+# 主类名
+FFTStringMatcher = OptimizedFFTStringMatcher
+
+
+def benchmark_algorithms():
+    """FFT字符串匹配算法性能测试"""
+    print("=== FFT字符串匹配性能测试 ===")
+    
+    # 测试数据
+    test_cases = [
+        ("abcdefghijklmnopqrstuvwxyz", "def", "小规模测试"),
+        ("a" * 100 + "pattern" + "a" * 100, "pattern", "中等规模测试"),
+        ("a" * 1000 + "bcd" + "a" * 1000, "bcd", "大规模测试"),
+        ("a" * 5000 + "xyz" + "a" * 5000, "xyz", "超大规模测试"),
+    ]
+    
+    matcher = FFTStringMatcher()
+    
+    for i, (S, P, desc) in enumerate(test_cases, 1):
+        print(f"\n{desc} {i}: S长度={len(S)}, P长度={len(P)}")
+        
+        # 测试FFT算法
+        start_time = time.time()
+        fft_matches = matcher.fft_string_matching(S, P, verbose=False)
+        fft_time = time.time() - start_time
+        
+        # 测试朴素算法
+        start_time = time.time()
+        naive_matches = matcher.naive_string_matching(S, P)
+        naive_time = time.time() - start_time
+        
+        # 验证结果一致性
+        assert fft_matches == naive_matches, \
+               f"结果不一致: FFT={fft_matches}, 朴素={naive_matches}"
+        
+        print(f"FFT算法: {fft_time:.6f}s, 匹配位置: {fft_matches}")
+        print(f"朴素算法: {naive_time:.6f}s")
+        
+        if naive_time > 0:
+            speedup = naive_time / fft_time if fft_time > 0 else float('inf')
+            print(f"相对朴素算法加速比: {speedup:.2f}x")
 
 
 def benchmark_algorithms():
@@ -435,7 +771,7 @@ def example_usage():
     """详细的使用示例"""
     print("🎯 === FFT字符串匹配详细演示 ===")
     
-    matcher = FFTStringMatcher()
+    matcher = OptimizedFFTStringMatcher()
     
     # 示例1：基本匹配
     print("\n" + "="*60)
@@ -466,7 +802,7 @@ def complexity_analysis():
     """复杂度分析演示"""
     print("=== 复杂度分析演示 ===")
     
-    matcher = FFTStringMatcher()
+    matcher = OptimizedFFTStringMatcher()
     sizes = [100, 500, 1000, 2000, 5000]
     
     for n in sizes:
@@ -508,7 +844,7 @@ def demonstration():
     print("📊 性能对比分析")
     print("="*60)
     
-    matcher = FFTStringMatcher()
+    matcher = OptimizedFFTStringMatcher()
     
     # 测试不同规模的字符串
     test_cases = [
@@ -538,6 +874,48 @@ def demonstration():
             print(f"性能对比: {speedup:.2f}x")
 
 
+def demonstration():
+    """FFT字符串匹配算法完整演示"""
+    print("🚀 FFT字符串匹配算法演示")
+    print("=" * 80)
+    print("展示基于FFT的正则匹配过程")
+    print("=" * 80)
+    
+    matcher = FFTStringMatcher()
+    
+    # 示例1：展示自适应策略选择
+    print("\n" + "="*60)
+    print("📌 示例1：自适应策略演示")
+    print("="*60)
+    
+    test_cases = [
+        ("abcdefghijklmnop", "def", "小规模数据"),
+        ("a" * 200 + "pattern" + "a" * 200, "pattern", "中规模数据"),
+        ("a" * 2000 + "target" + "a" * 2000, "target", "大规模数据"),
+    ]
+    
+    for S, P, desc in test_cases:
+        print(f"\n{desc}: 长度={len(S)}")
+        matches = matcher.fft_string_matching(S, P, verbose=True)
+        print(f"匹配结果: {matches}")
+    
+    # 示例2：性能对比
+    print("\n" + "="*60)
+    print("📊 示例2：性能对比分析")
+    print("="*60)
+    benchmark_algorithms()
+    
+    # 示例3：通配符匹配
+    print("\n" + "="*60)
+    print("📌 示例3：通配符匹配")
+    print("="*60)
+    S3 = "abcdefghijklmnopqrstuvwxyz"
+    P3 = "c?e?g"
+    print(f"测试字符串: '{S3}'")
+    print(f"模式串: '{P3}'")
+    matches3 = matcher.fft_string_matching(S3, P3, verbose=True)
+
+
 if __name__ == "__main__":
-    # 运行完整演示
+    # 运行FFT字符串匹配算法演示
     demonstration()

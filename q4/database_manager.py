@@ -1,8 +1,6 @@
 """
-数据库管理模块
-
-提供A股数据的存储、查询、更新和备份功能。
-支持SQLite、MySQL、PostgreSQL等数据库。
+数据库管理
+支持多种数据库的股票数据存储和查询
 """
 
 import sqlite3
@@ -24,34 +22,29 @@ class DatabaseManager:
     """数据库管理器"""
     
     def __init__(self, db_config: Dict[str, Any]):
-        """
-        初始化数据库管理器
-        
-        Args:
-            db_config: 数据库配置字典
-        """
+        # 初始化数据库配置
         self.db_config = db_config
         self.db_type = db_config.get('type', 'sqlite')
         self.engine = None
         self.connection = None
         self.session = None
         
-        # 配置日志
+        # 设置日志
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
         
-        # 初始化数据库连接
+        # 连接数据库
         self._init_connection()
         
-        # 创建数据表
+        # 建表
         self.create_tables()
     
     def _init_connection(self):
-        """初始化数据库连接"""
+        """连接数据库"""
         try:
             if self.db_type.lower() == 'sqlite':
                 db_path = self.db_config.get('path', './stock_data.db')
-                # 确保目录存在
+                # 创建目录
                 os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
                 
                 connection_string = f"sqlite:///{db_path}"
@@ -77,7 +70,7 @@ class DatabaseManager:
             else:
                 raise ValueError(f"不支持的数据库类型: {self.db_type}")
             
-            # 创建引擎
+            # 创建数据库引擎
             self.engine = create_engine(connection_string, echo=False)
             
             # 创建会话
@@ -91,9 +84,9 @@ class DatabaseManager:
             raise
     
     def create_tables(self):
-        """创建数据表"""
+        """建表"""
         try:
-            # 股票基本信息表
+            # 股票信息表
             stock_info_sql = """
             CREATE TABLE IF NOT EXISTS stock_info (
                 stock_code VARCHAR(10) PRIMARY KEY,
@@ -106,7 +99,7 @@ class DatabaseManager:
             )
             """
             
-            # 日频行情数据表
+            # 行情数据表
             if self.db_type.lower() == 'sqlite':
                 daily_quotes_sql = """
                 CREATE TABLE IF NOT EXISTS daily_quotes (
@@ -126,7 +119,7 @@ class DatabaseManager:
                 )
                 """
                 
-                # 创建索引
+                # 索引
                 indexes_sql = [
                     "CREATE INDEX IF NOT EXISTS idx_stock_code ON daily_quotes(stock_code)",
                     "CREATE INDEX IF NOT EXISTS idx_trade_date ON daily_quotes(trade_date)",
@@ -156,7 +149,7 @@ class DatabaseManager:
                 
                 indexes_sql = []
             
-            # 数据更新日志表
+            # 日志表
             update_logs_sql = """
             CREATE TABLE IF NOT EXISTS update_logs (
                 id INTEGER PRIMARY KEY {},
@@ -171,81 +164,70 @@ class DatabaseManager:
             )
             """.format("AUTOINCREMENT" if self.db_type.lower() == 'sqlite' else "AUTO_INCREMENT")
             
-            # 执行建表语句
+            # 执行SQL
             with self.engine.connect() as conn:
                 conn.execute(text(stock_info_sql))
                 conn.execute(text(daily_quotes_sql))
                 conn.execute(text(update_logs_sql))
                 conn.commit()
                 
-                # 创建索引
+                # 建索引
                 for index_sql in indexes_sql:
                     try:
                         conn.execute(text(index_sql))
                     except Exception as e:
-                        self.logger.warning(f"创建索引失败: {e}")
+                        self.logger.warning(f"建索引失败: {e}")
                 
                 conn.commit()
             
-            self.logger.info("数据表创建完成")
+            self.logger.info("建表完成")
             
         except Exception as e:
-            self.logger.error(f"创建数据表失败: {e}")
+            self.logger.error(f"建表失败: {e}")
             raise
     
     def insert_stock_info(self, stock_list: List[Dict[str, str]]):
-        """
-        插入股票基本信息
-        
-        Args:
-            stock_list: 股票信息列表
-        """
+        """插入股票基本信息"""
         try:
-            # 转换为DataFrame
+            # 转为DataFrame
             df = pd.DataFrame(stock_list)
             
-            # 添加时间戳
+            # 加时间戳
             df['created_at'] = datetime.now()
             df['updated_at'] = datetime.now()
             
-            # 插入数据库，如果存在则替换
+            # 存入数据库
             df.to_sql('stock_info', self.engine, if_exists='replace', index=False, method='multi')
             
-            self.logger.info(f"成功插入{len(stock_list)}条股票基本信息")
+            self.logger.info(f"插入{len(stock_list)}条股票信息")
             
         except Exception as e:
             self.logger.error(f"插入股票信息失败: {e}")
             raise
     
     def insert_stock_data(self, data: pd.DataFrame, batch_size: int = 1000):
-        """
-        插入股票行情数据
-        
-        Args:
-            data: 股票数据DataFrame
-            batch_size: 批量插入大小
-        """
+        """插入股票数据"""
         try:
             if data.empty:
                 self.logger.warning("数据为空，跳过插入")
                 return
             
-            # 确保数据格式正确
+            # 数据预处理
             data = self._prepare_data_for_insert(data)
             
-            # 批量插入
+            # 批量入库
             total_records = len(data)
             inserted_records = 0
             
             for i in range(0, total_records, batch_size):
                 batch_data = data.iloc[i:i+batch_size]
                 
-                # 使用ON DUPLICATE KEY UPDATE或REPLACE语句处理重复数据
+                # 处理重复数据
                 if self.db_type.lower() == 'sqlite':
                     batch_data.to_sql('daily_quotes', self.engine, if_exists='append', 
                                     index=False, method='multi')
                 else:
-                    # MySQL/PostgreSQL使用upsert
+                    # MySQL/PostgreSQL用upsert
                     self._upsert_data(batch_data)
                 
                 inserted_records += len(batch_data)
@@ -253,26 +235,18 @@ class DatabaseManager:
                 if inserted_records % 10000 == 0:
                     self.logger.info(f"已插入{inserted_records}/{total_records}条记录")
             
-            self.logger.info(f"成功插入{inserted_records}条股票数据")
+            self.logger.info(f"插入{inserted_records}条数据")
             
         except Exception as e:
             self.logger.error(f"插入股票数据失败: {e}")
             raise
     
     def _prepare_data_for_insert(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        准备插入数据库的数据
-        
-        Args:
-            data: 原始数据
-            
-        Returns:
-            处理后的数据
-        """
+        """数据预处理"""
         # 复制数据
         prepared_data = data.copy()
         
-        # 确保必要的列存在
+        # 检查必要字段
         required_columns = ['stock_code', 'trade_date', 'open_price', 'high_price', 
                           'low_price', 'close_price', 'volume', 'amount']
         
@@ -285,24 +259,19 @@ class DatabaseManager:
                 else:
                     prepared_data[col] = None
         
-        # 数据类型转换
+        # 类型转换
         prepared_data['trade_date'] = pd.to_datetime(prepared_data['trade_date']).dt.date
         
-        # 添加创建时间
+        # 加时间戳
         prepared_data['created_at'] = datetime.now()
         
-        # 移除重复数据
+        # 去重
         prepared_data = prepared_data.drop_duplicates(subset=['stock_code', 'trade_date'])
         
         return prepared_data
     
     def _upsert_data(self, data: pd.DataFrame):
-        """
-        执行upsert操作（插入或更新）
-        
-        Args:
-            data: 要插入的数据
-        """
+        """upsert操作（插入或更新）"""
         # 这里简化处理，先删除再插入
         with self.engine.connect() as conn:
             for _, row in data.iterrows():
@@ -322,13 +291,7 @@ class DatabaseManager:
         data.to_sql('daily_quotes', self.engine, if_exists='append', index=False)
     
     def update_incremental_data(self, stock_code: str, data: pd.DataFrame):
-        """
-        增量数据更新
-        
-        Args:
-            stock_code: 股票代码
-            data: 新数据
-        """
+        """增量更新数据"""
         try:
             # 获取数据库中该股票的最新日期
             latest_date = self.get_latest_date(stock_code)
@@ -351,15 +314,7 @@ class DatabaseManager:
             raise
     
     def get_latest_date(self, stock_code: str = None) -> Optional[datetime]:
-        """
-        获取最新数据日期
-        
-        Args:
-            stock_code: 股票代码，如果为None则获取全局最新日期
-            
-        Returns:
-            最新日期
-        """
+        """获取最新数据日期"""
         try:
             if stock_code:
                 sql = text("""
@@ -385,17 +340,7 @@ class DatabaseManager:
             return None
     
     def get_stock_data(self, stock_code: str, start_date: str = None, end_date: str = None) -> pd.DataFrame:
-        """
-        查询股票数据
-        
-        Args:
-            stock_code: 股票代码
-            start_date: 开始日期
-            end_date: 结束日期
-            
-        Returns:
-            股票数据DataFrame
-        """
+        """查询股票数据"""
         try:
             sql = "SELECT * FROM daily_quotes WHERE stock_code = :stock_code"
             params = {'stock_code': stock_code}
@@ -435,15 +380,7 @@ class DatabaseManager:
             return []
     
     def count_records(self, stock_code: str = None) -> int:
-        """
-        统计记录数量
-        
-        Args:
-            stock_code: 股票代码，如果为None则统计全部
-            
-        Returns:
-            记录数量
-        """
+        """统计记录数量"""
         try:
             if stock_code:
                 sql = text("SELECT COUNT(*) FROM daily_quotes WHERE stock_code = :stock_code")
@@ -461,12 +398,7 @@ class DatabaseManager:
             return 0
     
     def count_stocks(self) -> int:
-        """
-        统计股票数量
-        
-        Returns:
-            股票数量
-        """
+        """统计股票数量"""
         try:
             sql = text("SELECT COUNT(DISTINCT stock_code) FROM daily_quotes")
             
@@ -479,12 +411,7 @@ class DatabaseManager:
             return 0
     
     def count_trading_days(self) -> int:
-        """
-        统计交易日数量
-        
-        Returns:
-            交易日数量
-        """
+        """统计交易日数量"""
         try:
             sql = text("SELECT COUNT(DISTINCT trade_date) FROM daily_quotes")
             
@@ -497,12 +424,7 @@ class DatabaseManager:
             return 0
     
     def backup_database(self, backup_path: str):
-        """
-        备份数据库
-        
-        Args:
-            backup_path: 备份路径
-        """
+        """备份数据库"""
         try:
             # 确保备份目录存在
             os.makedirs(os.path.dirname(backup_path), exist_ok=True)
@@ -522,12 +444,7 @@ class DatabaseManager:
             raise
     
     def _export_to_csv(self, backup_dir: str):
-        """
-        导出数据为CSV文件
-        
-        Args:
-            backup_dir: 备份目录
-        """
+        """导出数据为CSV文件"""
         # 导出股票信息
         stock_info_df = pd.read_sql("SELECT * FROM stock_info", self.engine)
         stock_info_df.to_csv(os.path.join(backup_dir, 'stock_info.csv'), index=False)
@@ -568,12 +485,7 @@ class DatabaseManager:
             raise
     
     def _restore_from_csv(self, backup_dir: str):
-        """
-        从CSV文件恢复数据
-        
-        Args:
-            backup_dir: 备份目录
-        """
+        """从CSV文件恢复数据"""
         # 清空现有数据
         with self.engine.connect() as conn:
             conn.execute(text("DELETE FROM daily_quotes"))
@@ -597,18 +509,7 @@ class DatabaseManager:
                   start_date: str = None, end_date: str = None,
                   status: str = 'SUCCESS', records_count: int = 0, 
                   error_message: str = None):
-        """
-        记录更新日志
-        
-        Args:
-            update_type: 更新类型
-            stock_code: 股票代码
-            start_date: 开始日期
-            end_date: 结束日期
-            status: 状态
-            records_count: 记录数量
-            error_message: 错误信息
-        """
+        """记录更新日志"""
         try:
             log_data = {
                 'update_type': update_type,
@@ -628,12 +529,7 @@ class DatabaseManager:
             self.logger.error(f"记录日志失败: {e}")
     
     def get_data_statistics(self) -> Dict[str, Any]:
-        """
-        获取数据统计信息
-        
-        Returns:
-            统计信息字典
-        """
+        """获取数据统计信息"""
         try:
             stats = {}
             
@@ -683,7 +579,7 @@ class DatabaseManager:
 
 
 def example_usage():
-    """使用示例"""
+    """测试代码"""
     
     # SQLite配置
     sqlite_config = {
